@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Streamlit secrets — NEVER push
+.streamlit/secrets.toml
+
+# Logs
+logs/*.jsonl
+logs/*.csv
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local scratch tests
+_test_*.py
