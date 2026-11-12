@@ -93,10 +93,18 @@ final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 # --- 5. LOGGING ---
 log_row = {
     "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
-    "nifty_spot": spot_price, "nifty_chg": spot_chg, "nifty_pct": round(spot_pct, 2),
-    "vix_ltp": vix_ltp, "vix_chg": vix_chg, "vix_pct": round(vix_pct, 2),
-    "wti_ltp": wti_ltp, "wti_chg": wti_chg, "wti_pct": round(wti_pct, 2),
-    "inr_ltp": inr_ltp, "inr_chg": inr_chg, "inr_pct": round(inr_pct, 2),
+    "nifty_spot": round(spot_price, 2), 
+    "nifty_chg": round(spot_chg, 2), 
+    "nifty_pct": round(spot_pct, 2),
+    "vix_ltp": round(vix_ltp, 2), 
+    "vix_chg": round(vix_chg, 2), 
+    "vix_pct": round(vix_pct, 2),
+    "wti_ltp": round(wti_ltp, 2), 
+    "wti_chg": round(wti_chg, 2), 
+    "wti_pct": round(wti_pct, 2),
+    "inr_ltp": round(inr_ltp, 3), 
+    "inr_chg": round(inr_chg, 3), 
+    "inr_pct": round(inr_pct, 2),
     "oi_score": round(oi_res["score"], 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
@@ -104,8 +112,13 @@ log_row = {
     "position_cap": final_decision["position_cap"],
     "reason": " | ".join(final_decision["reasons"])
 }
-# Fire the logger (ignores errors silently so it doesn't break the UI)
-log_book.save_log_to_github(log_row, st.secrets)
+
+# Check if it is a weekday (0-4) and between 09:00 AM and 04:00 PM IST
+is_weekday = now.weekday() < 5
+is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
+
+if is_weekday and is_market_hours:
+    log_book.save_log_to_github(log_row, st.secrets)
 
 # --- 6. UI RENDER ---
 st.title("🎯 Nifty Ecosystem Dashboard")
