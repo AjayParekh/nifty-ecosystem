@@ -27,6 +27,10 @@ st.markdown("""
 .sell { background: linear-gradient(135deg, #cb2d3e, #ef473a); }
 .wait { background: linear-gradient(135deg, #f12711, #f5af19); }
 .neutral { background: linear-gradient(135deg, #2c3e50, #4ca1af); }
+.alert-box { padding: 15px; border-radius: 10px; margin-bottom: 15px; font-weight: bold; }
+.alert-trap { background-color: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+.alert-safe { background-color: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+.alert-info { background-color: #d1ecf1; color: #0c5460; border-left: 5px solid #17a2b8; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -45,7 +49,6 @@ if "tracker" not in st.session_state:
 tracker = st.session_state.tracker
 
 # --- 3. DATA FETCHING ---
-# A. Spot & VIX
 spot_q = upstox.get_quote(settings.NIFTY_INDEX_KEY)
 vix_q = upstox.get_quote(settings.INDIA_VIX_KEY)
 
@@ -57,7 +60,6 @@ vix_ltp = vix_q.get("last_price", 0) if vix_q else 0
 vix_chg = vix_q.get("net_change", 0) if vix_q else 0
 vix_pct = (vix_chg / max(vix_ltp - vix_chg, 1)) * 100 if vix_q else 0
 
-# B. Macro (Crude & INR)
 macro_data = macro_client.get_macro_snapshot()
 wti_ltp = macro_data["wti"]["ltp"] if macro_data and macro_data["wti"] else 0
 wti_chg = macro_data["wti"]["chg"] if macro_data and macro_data["wti"] else 0
@@ -67,7 +69,6 @@ inr_ltp = macro_data["inr"]["ltp"] if macro_data and macro_data["inr"] else 0
 inr_chg = macro_data["inr"]["chg"] if macro_data and macro_data["inr"] else 0
 inr_pct = macro_data["inr_pct"] if macro_data else 0
 
-# C. OI & Expiry
 days_until_tuesday = (1 - now.weekday()) % 7
 expiry_date = (now + dt.timedelta(days=days_until_tuesday)).strftime('%Y-%m-%d')
 today_str = now.strftime('%Y-%m-%d')
@@ -78,11 +79,12 @@ tracker.record_spot(now, spot_price)
 tracker.record_oi(now, oi_resp)
 report = tracker.report(now)
 
-# D. Volume Baseline (Using Futures as proxy)
 fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
 fut_vol = fut_q.get("volume", 0) if fut_q else 0
 fut_oi = fut_q.get("oi", 0) if fut_q else 0
-vol_baseline = 100000 
+
+# Lowered the volume baseline so the gate passes during normal market hours
+vol_baseline = 10000 
 
 # --- 4. EVALUATION ---
 regime_res = regime_factor.evaluate_regime(vix_ltp, vix_pct, wti_ltp, wti_pct, inr_pct)
@@ -90,21 +92,18 @@ oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, fut_oi * 0.99, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
-# --- 5. LOGGING ---
+# --- 5. MACRO GAP PREDICTOR ---
+# If Crude drops, Nifty should rise. If INR rises (rupee falls), Nifty should fall.
+expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
+gap_pct = expected_nifty_pct - spot_pct
+
+# --- 6. LOGGING ---
 log_row = {
     "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
-    "nifty_spot": round(spot_price, 2), 
-    "nifty_chg": round(spot_chg, 2), 
-    "nifty_pct": round(spot_pct, 2),
-    "vix_ltp": round(vix_ltp, 2), 
-    "vix_chg": round(vix_chg, 2), 
-    "vix_pct": round(vix_pct, 2),
-    "wti_ltp": round(wti_ltp, 2), 
-    "wti_chg": round(wti_chg, 2), 
-    "wti_pct": round(wti_pct, 2),
-    "inr_ltp": round(inr_ltp, 3), 
-    "inr_chg": round(inr_chg, 3), 
-    "inr_pct": round(inr_pct, 2),
+    "nifty_spot": round(spot_price, 2), "nifty_chg": round(spot_chg, 2), "nifty_pct": round(spot_pct, 2),
+    "vix_ltp": round(vix_ltp, 2), "vix_chg": round(vix_chg, 2), "vix_pct": round(vix_pct, 2),
+    "wti_ltp": round(wti_ltp, 2), "wti_chg": round(wti_chg, 2), "wti_pct": round(wti_pct, 2),
+    "inr_ltp": round(inr_ltp, 3), "inr_chg": round(inr_chg, 3), "inr_pct": round(inr_pct, 2),
     "oi_score": round(oi_res["score"], 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
@@ -113,14 +112,12 @@ log_row = {
     "reason": " | ".join(final_decision["reasons"])
 }
 
-# Check if it is a weekday (0-4) and between 09:00 AM and 04:00 PM IST
 is_weekday = now.weekday() < 5
 is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
-
 if is_weekday and is_market_hours:
     log_book.save_log_to_github(log_row, st.secrets)
 
-# --- 6. UI RENDER ---
+# --- 7. UI RENDER ---
 st.title("🎯 Nifty Ecosystem Dashboard")
 
 def render_card(label, value, chg, pct, is_inr=False):
@@ -147,6 +144,27 @@ with c4: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
+# MACRO GAP ALERT LOGIC (Now with VIX Confirmation)
+if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
+    if gap_pct > 0:
+        # Expected Nifty to rise, but it hasn't
+        if vix_pct > 2.0:
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Fear is increasing. Wait for VIX to cool down before buying.</div>', unsafe_allow_html=True)
+        elif spot_pct < 0:
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>. Be careful with shorts.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b> more than its current move. VIX is calm ({vix_pct:+.2f}%). Look for Long setups.</div>', unsafe_allow_html=True)
+    else:
+        # Expected Nifty to fall, but it hasn't
+        if vix_pct < -2.0:
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{gap_pct:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>. Fear is fading. Be careful with shorts.</div>', unsafe_allow_html=True)
+        elif spot_pct > 0:
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{gap_pct:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>. Be careful with longs.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{gap_pct:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%). Look for Short setups.</div>', unsafe_allow_html=True)
+else:
+    st.markdown(f'<div class="alert-box alert-info">⚪ <b>NIFTY & MACRO IN SYNC</b> — Gap is {gap_pct:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%. No catch-up trade available.</div>', unsafe_allow_html=True)
+
 # Main Decision Box
 action = final_decision["action"]
 css_class = "neutral"
@@ -160,6 +178,15 @@ st.markdown(f"""
     <p style="font-size: 1.2rem; margin-top: 10px;">Direction: <b>{final_decision['direction']}</b> | Position Size: <b>{final_decision['position_cap'] * 100:.0f}%</b></p>
 </div>
 """, unsafe_allow_html=True)
+
+# Detailed Breakdown
+st.subheader("📊 Gap Calculation Breakdown")
+g1, g2, g3 = st.columns(3)
+g1.metric("WTI Impact", f"{wti_pct * -settings.CRUDE_WEIGHT:+.2f}%", "Bullish for Nifty" if wti_pct < 0 else "Bearish for Nifty", delta_color="normal")
+g2.metric("INR Impact", f"{inr_pct * -settings.INR_WEIGHT:+.2f}%", "Bullish for Nifty" if inr_pct < 0 else "Bearish for Nifty", delta_color="normal")
+g3.metric("Expected Nifty Move", f"{expected_nifty_pct:+.2f}%", f"Actual: {spot_pct:+.2f}%")
+
+st.markdown("---")
 
 col1, col2, col3 = st.columns(3)
 with col1:
