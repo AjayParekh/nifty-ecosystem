@@ -302,3 +302,4 @@ timestamp,nifty_spot,nifty_chg,nifty_pct,vix_ltp,vix_chg,vix_pct,wti_ltp,wti_chg
 2026-11-13 13:36:11,25121.0,-178.35,-0.7,16.0,-0.62,-3.73,88.37,-0.37,-0.42,94.263,0.222,0.24,-0.54,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
 2026-11-13 13:37:11,25119.45,-179.9,-0.71,15.99,-0.63,-3.79,88.38,-0.36,-0.41,94.243,0.203,0.22,-0.54,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
 2026-11-13 13:37:21,25117.15,-182.2,-0.72,15.99,-0.63,-3.79,88.37,-0.37,-0.42,94.237,0.197,0.21,-0.54,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
+2026-11-13 13:37:26,25118.1,-181.25,-0.72,16.0,-0.62,-3.73,88.37,-0.37,-0.42,94.237,0.197,0.21,-0.54,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
