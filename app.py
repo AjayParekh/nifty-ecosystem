@@ -75,7 +75,7 @@ today_str = now.strftime('%Y-%m-%d')
 
 oi_resp = upstox.get_change_oi(settings.NIFTY_INDEX_KEY, expiry_date, today_str)
 
-# Calculate Total Change OI, PCR, and Near-ATM Change OI
+# Calculate Total Change OI, PCR, Near-ATM Change OI, and ATM Strike
 total_call_chg = 0
 total_put_chg = 0
 total_call_oi = 0
@@ -83,6 +83,7 @@ total_put_oi = 0
 pcr = 0.0
 near_call_chg = 0
 near_put_chg = 0
+atm_strike = 0
 
 if oi_resp and oi_resp.get("status") == "success":
     items = oi_resp.get("data", {}).get("call_put_oi_data_list", [])
@@ -106,7 +107,6 @@ if oi_resp and oi_resp.get("status") == "success":
                 near_call_chg += item.get("call_change_oi", 0) or 0
                 near_put_chg += item.get("put_change_oi", 0) or 0
 
-# FETCH FUTURES DATA
 fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
 fut_price = fut_q.get("last_price", 0) if fut_q else 0
 fut_chg = fut_q.get("net_change", 0) if fut_q else 0
@@ -139,12 +139,15 @@ log_row = {
     "vix_ltp": round(vix_ltp, 2), "vix_chg": round(vix_chg, 2), "vix_pct": round(vix_pct, 2),
     "wti_ltp": round(wti_ltp, 2), "wti_chg": round(wti_chg, 2), "wti_pct": round(wti_pct, 2),
     "inr_ltp": round(inr_ltp, 3), "inr_chg": round(inr_chg, 3), "inr_pct": round(inr_pct, 2),
-    "total_call_chg": total_call_chg,
-    "total_put_chg": total_put_chg,
+    "expected_nifty_pct": round(expected_nifty_pct, 2),
+    "gap_pct": round(gap_pct, 2),
+    "atm_strike": atm_strike,
+    "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
+    "total_call_chg": total_call_chg, "total_put_chg": total_put_chg,
     "pcr": round(pcr, 2),
-    "near_call_chg": near_call_chg,
-    "near_put_chg": near_put_chg,
+    "near_call_chg": near_call_chg, "near_put_chg": near_put_chg,
     "oi_score": round(oi_res["score"], 2),
+    "vol_ratio": round(vol_res.get("ratio", 0), 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
     "final_action": final_decision["action"],
@@ -185,7 +188,6 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-# MACRO GAP ALERT LOGIC
 if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
     if gap_pct > 0:
         if vix_pct > 2.0:
@@ -204,7 +206,6 @@ if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
 else:
     st.markdown(f'<div class="alert-box alert-info">⚪ <b>NIFTY & MACRO IN SYNC</b> — Gap is {gap_pct:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%. No catch-up trade available.</div>', unsafe_allow_html=True)
 
-# Main Decision Box
 action = final_decision["action"]
 css_class = "neutral"
 if "BUY" in action: css_class = "buy"
@@ -238,12 +239,14 @@ with col2:
 with col3:
     st.subheader("📊 Volume Gate")
     st.write(f"**Status:** {vol_res['gate']}")
+    st.caption(f"• Ratio: {vol_res.get('ratio', 0):.1f}x baseline")
     st.caption(f"• {vol_res['reason']}")
 with col4:
     st.subheader("🎯 Near-ATM Change OI")
+    st.caption(f"ATM Strike: **{atm_strike}**")
     st.caption(f"Call Chg: **{near_call_chg:+,}**")
     st.caption(f"Put Chg: **{near_put_chg:+,}**")
-    st.caption(f"PCR: {pcr:.2f} | Fut Vol: {fut_vol:,} | Fut OI: {fut_oi:,}")
+    st.caption(f"PCR: {pcr:.2f} | Fut Vol: {fut_vol:,}")
 
 st.markdown("---")
 st.caption(f"Data Status: {report['reason']} | Last updated: {now.strftime('%H:%M:%S IST')}")
