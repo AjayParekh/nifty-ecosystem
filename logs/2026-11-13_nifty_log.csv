@@ -448,3 +448,4 @@ timestamp,nifty_spot,nifty_chg,nifty_pct,vix_ltp,vix_chg,vix_pct,wti_ltp,wti_chg
 2026-11-13 15:12:25,25128.25,-171.1,-0.68,15.41,-1.21,-7.28,88.56,-0.18,-0.2,94.237,0.197,0.21,-0.21,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
 2026-11-13 15:12:40,25123.1,-176.25,-0.7,15.42,-1.2,-7.22,88.56,-0.18,-0.2,94.23,0.19,0.2,-0.22,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
 2026-11-13 15:12:55,25125.1,-174.25,-0.69,15.42,-1.2,-7.22,88.5,-0.24,-0.27,94.24,0.2,0.21,-0.22,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
+2026-11-13 15:13:10,25126.9,-172.45,-0.68,15.42,-1.2,-7.22,88.5,-0.24,-0.27,94.24,0.2,0.21,-0.22,FAIL,CAUTION,NEUTRAL,0.0,Insufficient data (OI or Volume missing)
