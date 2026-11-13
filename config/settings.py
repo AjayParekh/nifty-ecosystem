@@ -102,3 +102,12 @@ OUTCOME_HORIZONS_MIN = (5, 10, 15)
 UI_REFRESH_SEC    = 15
 UI_TABLE_TOP_N    = 20
 UI_STRIKE_DISPLAY = 15
+
+# ============================================================
+# 13. MACRO GAP PREDICTOR (Nifty vs WTI & INR)
+# ============================================================
+GAP_THRESHOLD_PCT = 0.50       # Min gap to trigger alert (tweak to 1.00 later after reviewing logs)
+CRUDE_WEIGHT = 1.0             # Inverse impact of Crude on Nifty (Crude -1% -> Nifty +1%)
+INR_WEIGHT = 2.0               # Inverse impact of INR on Nifty (INR +1% -> Nifty -2%)
+
+
