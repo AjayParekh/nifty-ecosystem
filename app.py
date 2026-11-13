@@ -87,7 +87,6 @@ near_put_chg = 0
 if oi_resp and oi_resp.get("status") == "success":
     items = oi_resp.get("data", {}).get("call_put_oi_data_list", [])
     
-    # 1. Calculate Totals
     for item in items:
         total_call_chg += item.get("call_change_oi", 0) or 0
         total_put_chg += item.get("put_change_oi", 0) or 0
@@ -97,13 +96,9 @@ if oi_resp and oi_resp.get("status") == "success":
     if total_call_oi > 0:
         pcr = total_put_oi / total_call_oi
 
-    # 2. Calculate Near-ATM (Focus on +/- 3 strikes)
     if spot_price > 0 and items:
-        # Find ATM strike (closest to spot)
         atm_item = min(items, key=lambda x: abs(x["strike_price"] - spot_price))
         atm_strike = atm_item["strike_price"]
-        
-        # Nifty strike interval is typically 50, but we'll use 150 points to cover ~3 strikes up/down
         strike_window = 150
         
         for item in items:
@@ -111,13 +106,17 @@ if oi_resp and oi_resp.get("status") == "success":
                 near_call_chg += item.get("call_change_oi", 0) or 0
                 near_put_chg += item.get("put_change_oi", 0) or 0
 
+# FETCH FUTURES DATA
+fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
+fut_price = fut_q.get("last_price", 0) if fut_q else 0
+fut_chg = fut_q.get("net_change", 0) if fut_q else 0
+fut_pct = (fut_chg / max(fut_price - fut_chg, 1)) * 100 if fut_q else 0
+fut_vol = fut_q.get("volume", 0) if fut_q else 0
+fut_oi = fut_q.get("oi", 0) if fut_q else 0
+
 tracker.record_spot(now, spot_price)
 tracker.record_oi(now, oi_resp)
 report = tracker.report(now)
-
-fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
-fut_vol = fut_q.get("volume", 0) if fut_q else 0
-fut_oi = fut_q.get("oi", 0) if fut_q else 0
 
 vol_baseline = 10000 
 
@@ -135,11 +134,11 @@ gap_pct = expected_nifty_pct - spot_pct
 log_row = {
     "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
     "nifty_spot": round(spot_price, 2), "nifty_chg": round(spot_chg, 2), "nifty_pct": round(spot_pct, 2),
+    "fut_price": round(fut_price, 2), "fut_chg": round(fut_chg, 2), "fut_pct": round(fut_pct, 2),
+    "fut_vol": fut_vol, "fut_oi": fut_oi,
     "vix_ltp": round(vix_ltp, 2), "vix_chg": round(vix_chg, 2), "vix_pct": round(vix_pct, 2),
     "wti_ltp": round(wti_ltp, 2), "wti_chg": round(wti_chg, 2), "wti_pct": round(wti_pct, 2),
     "inr_ltp": round(inr_ltp, 3), "inr_chg": round(inr_chg, 3), "inr_pct": round(inr_pct, 2),
-    "fut_vol": fut_vol, 
-    "fut_oi": fut_oi,
     "total_call_chg": total_call_chg,
     "total_put_chg": total_put_chg,
     "pcr": round(pcr, 2),
@@ -177,11 +176,12 @@ def render_card(label, value, chg, pct, is_inr=False):
     </div>
     """
 
-c1, c2, c3, c4 = st.columns(4)
-with c1: st.markdown(render_card("Nifty 50", spot_price, spot_chg, spot_pct), unsafe_allow_html=True)
-with c2: st.markdown(render_card("India VIX", vix_ltp, vix_chg, vix_pct), unsafe_allow_html=True)
-with c3: st.markdown(render_card("WTI Crude", wti_ltp, wti_chg, wti_pct), unsafe_allow_html=True)
-with c4: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=True), unsafe_allow_html=True)
+c1, c2, c3, c4, c5 = st.columns(5)
+with c1: st.markdown(render_card("Nifty Spot", spot_price, spot_chg, spot_pct), unsafe_allow_html=True)
+with c2: st.markdown(render_card("Nifty Futures", fut_price, fut_chg, fut_pct), unsafe_allow_html=True)
+with c3: st.markdown(render_card("India VIX", vix_ltp, vix_chg, vix_pct), unsafe_allow_html=True)
+with c4: st.markdown(render_card("WTI Crude", wti_ltp, wti_chg, wti_pct), unsafe_allow_html=True)
+with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=True), unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -243,7 +243,7 @@ with col4:
     st.subheader("🎯 Near-ATM Change OI")
     st.caption(f"Call Chg: **{near_call_chg:+,}**")
     st.caption(f"Put Chg: **{near_put_chg:+,}**")
-    st.caption(f"PCR: {pcr:.2f} | Vol: {fut_vol:,}")
+    st.caption(f"PCR: {pcr:.2f} | Fut Vol: {fut_vol:,} | Fut OI: {fut_oi:,}")
 
 st.markdown("---")
 st.caption(f"Data Status: {report['reason']} | Last updated: {now.strftime('%H:%M:%S IST')}")
