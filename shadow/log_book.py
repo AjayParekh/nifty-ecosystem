@@ -11,10 +11,10 @@ import requests
 COLUMNS = [
     "timestamp", 
     "nifty_spot", "nifty_chg", "nifty_pct",
+    "fut_price", "fut_chg", "fut_pct", "fut_vol", "fut_oi",
     "vix_ltp", "vix_chg", "vix_pct",
     "wti_ltp", "wti_chg", "wti_pct",
     "inr_ltp", "inr_chg", "inr_pct",
-    "fut_vol", "fut_oi",
     "total_call_chg", "total_put_chg", "pcr",
     "near_call_chg", "near_put_chg",
     "oi_score", "volume_gate", "regime_status", 
