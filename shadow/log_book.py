@@ -15,9 +15,12 @@ COLUMNS = [
     "vix_ltp", "vix_chg", "vix_pct",
     "wti_ltp", "wti_chg", "wti_pct",
     "inr_ltp", "inr_chg", "inr_pct",
+    "expected_nifty_pct", "gap_pct",
+    "atm_strike",
+    "total_call_oi", "total_put_oi", 
     "total_call_chg", "total_put_chg", "pcr",
     "near_call_chg", "near_put_chg",
-    "oi_score", "volume_gate", "regime_status", 
+    "oi_score", "vol_ratio", "volume_gate", "regime_status", 
     "final_action", "position_cap", "reason"
 ]
 def _get_github_headers(token):
