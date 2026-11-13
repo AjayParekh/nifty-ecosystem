@@ -9,13 +9,17 @@ import io
 import requests
 
 COLUMNS = [
-    "timestamp", "nifty_spot", "nifty_chg", "nifty_pct",
+    "timestamp", 
+    "nifty_spot", "nifty_chg", "nifty_pct",
     "vix_ltp", "vix_chg", "vix_pct",
     "wti_ltp", "wti_chg", "wti_pct",
     "inr_ltp", "inr_chg", "inr_pct",
-    "oi_score", "volume_gate", "regime_status", "final_action", "position_cap", "reason"
+    "fut_vol", "fut_oi",
+    "total_call_chg", "total_put_chg", "pcr",
+    "near_call_chg", "near_put_chg",
+    "oi_score", "volume_gate", "regime_status", 
+    "final_action", "position_cap", "reason"
 ]
-
 def _get_github_headers(token):
     return {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
 
