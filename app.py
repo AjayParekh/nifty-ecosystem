@@ -75,6 +75,42 @@ today_str = now.strftime('%Y-%m-%d')
 
 oi_resp = upstox.get_change_oi(settings.NIFTY_INDEX_KEY, expiry_date, today_str)
 
+# Calculate Total Change OI, PCR, and Near-ATM Change OI
+total_call_chg = 0
+total_put_chg = 0
+total_call_oi = 0
+total_put_oi = 0
+pcr = 0.0
+near_call_chg = 0
+near_put_chg = 0
+
+if oi_resp and oi_resp.get("status") == "success":
+    items = oi_resp.get("data", {}).get("call_put_oi_data_list", [])
+    
+    # 1. Calculate Totals
+    for item in items:
+        total_call_chg += item.get("call_change_oi", 0) or 0
+        total_put_chg += item.get("put_change_oi", 0) or 0
+        total_call_oi += item.get("call_oi", 0) or 0
+        total_put_oi += item.get("put_oi", 0) or 0
+        
+    if total_call_oi > 0:
+        pcr = total_put_oi / total_call_oi
+
+    # 2. Calculate Near-ATM (Focus on +/- 3 strikes)
+    if spot_price > 0 and items:
+        # Find ATM strike (closest to spot)
+        atm_item = min(items, key=lambda x: abs(x["strike_price"] - spot_price))
+        atm_strike = atm_item["strike_price"]
+        
+        # Nifty strike interval is typically 50, but we'll use 150 points to cover ~3 strikes up/down
+        strike_window = 150
+        
+        for item in items:
+            if abs(item["strike_price"] - atm_strike) <= strike_window:
+                near_call_chg += item.get("call_change_oi", 0) or 0
+                near_put_chg += item.get("put_change_oi", 0) or 0
+
 tracker.record_spot(now, spot_price)
 tracker.record_oi(now, oi_resp)
 report = tracker.report(now)
@@ -83,7 +119,6 @@ fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
 fut_vol = fut_q.get("volume", 0) if fut_q else 0
 fut_oi = fut_q.get("oi", 0) if fut_q else 0
 
-# Lowered the volume baseline so the gate passes during normal market hours
 vol_baseline = 10000 
 
 # --- 4. EVALUATION ---
@@ -93,7 +128,6 @@ vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, fut_oi * 0.99, vol
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
 # --- 5. MACRO GAP PREDICTOR ---
-# If Crude drops, Nifty should rise. If INR rises (rupee falls), Nifty should fall.
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 gap_pct = expected_nifty_pct - spot_pct
 
@@ -104,6 +138,13 @@ log_row = {
     "vix_ltp": round(vix_ltp, 2), "vix_chg": round(vix_chg, 2), "vix_pct": round(vix_pct, 2),
     "wti_ltp": round(wti_ltp, 2), "wti_chg": round(wti_chg, 2), "wti_pct": round(wti_pct, 2),
     "inr_ltp": round(inr_ltp, 3), "inr_chg": round(inr_chg, 3), "inr_pct": round(inr_pct, 2),
+    "fut_vol": fut_vol, 
+    "fut_oi": fut_oi,
+    "total_call_chg": total_call_chg,
+    "total_put_chg": total_put_chg,
+    "pcr": round(pcr, 2),
+    "near_call_chg": near_call_chg,
+    "near_put_chg": near_put_chg,
     "oi_score": round(oi_res["score"], 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
@@ -144,10 +185,9 @@ with c4: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-# MACRO GAP ALERT LOGIC (Now with VIX Confirmation)
+# MACRO GAP ALERT LOGIC
 if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
     if gap_pct > 0:
-        # Expected Nifty to rise, but it hasn't
         if vix_pct > 2.0:
             st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Fear is increasing. Wait for VIX to cool down before buying.</div>', unsafe_allow_html=True)
         elif spot_pct < 0:
@@ -155,7 +195,6 @@ if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
         else:
             st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b> more than its current move. VIX is calm ({vix_pct:+.2f}%). Look for Long setups.</div>', unsafe_allow_html=True)
     else:
-        # Expected Nifty to fall, but it hasn't
         if vix_pct < -2.0:
             st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{gap_pct:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>. Fear is fading. Be careful with shorts.</div>', unsafe_allow_html=True)
         elif spot_pct > 0:
@@ -179,7 +218,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Detailed Breakdown
 st.subheader("📊 Gap Calculation Breakdown")
 g1, g2, g3 = st.columns(3)
 g1.metric("WTI Impact", f"{wti_pct * -settings.CRUDE_WEIGHT:+.2f}%", "Bullish for Nifty" if wti_pct < 0 else "Bearish for Nifty", delta_color="normal")
@@ -188,7 +226,7 @@ g3.metric("Expected Nifty Move", f"{expected_nifty_pct:+.2f}%", f"Actual: {spot_
 
 st.markdown("---")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.subheader("🛡️ Macro Regime")
     st.write(f"**Status:** {regime_res['trade_permission']}")
@@ -201,6 +239,11 @@ with col3:
     st.subheader("📊 Volume Gate")
     st.write(f"**Status:** {vol_res['gate']}")
     st.caption(f"• {vol_res['reason']}")
+with col4:
+    st.subheader("🎯 Near-ATM Change OI")
+    st.caption(f"Call Chg: **{near_call_chg:+,}**")
+    st.caption(f"Put Chg: **{near_put_chg:+,}**")
+    st.caption(f"PCR: {pcr:.2f} | Vol: {fut_vol:,}")
 
 st.markdown("---")
 st.caption(f"Data Status: {report['reason']} | Last updated: {now.strftime('%H:%M:%S IST')}")
