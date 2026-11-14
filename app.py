@@ -31,6 +31,7 @@ st.markdown("""
 .alert-trap { background-color: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
 .alert-safe { background-color: #d4edda; color: #155724; border-left: 5px solid #28a745; }
 .alert-info { background-color: #d1ecf1; color: #0c5460; border-left: 5px solid #17a2b8; }
+.section-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,7 +76,7 @@ today_str = now.strftime('%Y-%m-%d')
 
 oi_resp = upstox.get_change_oi(settings.NIFTY_INDEX_KEY, expiry_date, today_str)
 
-# Calculate Total Change OI, PCR, Near-ATM Change OI, and ATM Strike
+# Calculate Totals, PCR, Near-ATM OI, and ATM Strike
 total_call_chg = 0
 total_put_chg = 0
 total_call_oi = 0
@@ -120,17 +121,18 @@ report = tracker.report(now)
 
 vol_baseline = 10000 
 
-# --- 4. EVALUATION ---
+# --- 4. EVALUATION (Internal vs External) ---
+# External Engine
+expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
+external_gap = expected_nifty_pct - spot_pct
+
+# Internal Engine
 regime_res = regime_factor.evaluate_regime(vix_ltp, vix_pct, wti_ltp, wti_pct, inr_pct)
 oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, fut_oi * 0.99, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
-# --- 5. MACRO GAP PREDICTOR ---
-expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
-gap_pct = expected_nifty_pct - spot_pct
-
-# --- 6. LOGGING ---
+# --- 5. LOGGING ---
 log_row = {
     "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
     "nifty_spot": round(spot_price, 2), "nifty_chg": round(spot_chg, 2), "nifty_pct": round(spot_pct, 2),
@@ -139,8 +141,9 @@ log_row = {
     "vix_ltp": round(vix_ltp, 2), "vix_chg": round(vix_chg, 2), "vix_pct": round(vix_pct, 2),
     "wti_ltp": round(wti_ltp, 2), "wti_chg": round(wti_chg, 2), "wti_pct": round(wti_pct, 2),
     "inr_ltp": round(inr_ltp, 3), "inr_chg": round(inr_chg, 3), "inr_pct": round(inr_pct, 2),
-    "expected_nifty_pct": round(expected_nifty_pct, 2),
-    "gap_pct": round(gap_pct, 2),
+    "external_score": round(expected_nifty_pct, 2), 
+    "external_gap": round(external_gap, 2),
+    "internal_score": round(oi_res["score"], 2),
     "atm_strike": atm_strike,
     "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
     "total_call_chg": total_call_chg, "total_put_chg": total_put_chg,
@@ -160,9 +163,10 @@ is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
 if is_weekday and is_market_hours:
     log_book.save_log_to_github(log_row, st.secrets)
 
-# --- 7. UI RENDER ---
+# --- 6. UI RENDER ---
 st.title("🎯 Nifty Ecosystem Dashboard")
 
+# Top Row Cards
 def render_card(label, value, chg, pct, is_inr=False):
     cls = "pos" if chg >= 0 else "neg"
     arrow = "▲" if chg > 0 else "▼" if chg < 0 else "—"
@@ -188,24 +192,27 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-if abs(gap_pct) > settings.GAP_THRESHOLD_PCT and is_market_hours:
-    if gap_pct > 0:
+# EXTERNAL ENGINE ALERT
+if abs(external_gap) > settings.GAP_THRESHOLD_PCT and is_market_hours:
+    if external_gap > 0:
         if vix_pct > 2.0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Fear is increasing. Wait for VIX to cool down before buying.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Wait for VIX to cool down.</div>', unsafe_allow_html=True)
         elif spot_pct < 0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>. Be careful with shorts.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{gap_pct:+.2f}%</b> more than its current move. VIX is calm ({vix_pct:+.2f}%). Look for Long setups.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
     else:
         if vix_pct < -2.0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{gap_pct:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>. Fear is fading. Be careful with shorts.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>.</div>', unsafe_allow_html=True)
         elif spot_pct > 0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{gap_pct:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>. Be careful with longs.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{gap_pct:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%). Look for Short setups.</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{external_gap:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
 else:
-    st.markdown(f'<div class="alert-box alert-info">⚪ <b>NIFTY & MACRO IN SYNC</b> — Gap is {gap_pct:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%. No catch-up trade available.</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="alert-box alert-info">⚪ <b>EXTERNAL MACRO IN SYNC</b> — Gap is {external_gap:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%.</div>', unsafe_allow_html=True)
 
+
+# FINAL DECISION BOX
 action = final_decision["action"]
 css_class = "neutral"
 if "BUY" in action: css_class = "buy"
@@ -219,34 +226,32 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.subheader("📊 Gap Calculation Breakdown")
-g1, g2, g3 = st.columns(3)
-g1.metric("WTI Impact", f"{wti_pct * -settings.CRUDE_WEIGHT:+.2f}%", "Bullish for Nifty" if wti_pct < 0 else "Bearish for Nifty", delta_color="normal")
-g2.metric("INR Impact", f"{inr_pct * -settings.INR_WEIGHT:+.2f}%", "Bullish for Nifty" if inr_pct < 0 else "Bearish for Nifty", delta_color="normal")
-g3.metric("Expected Nifty Move", f"{expected_nifty_pct:+.2f}%", f"Actual: {spot_pct:+.2f}%")
+# TWO-PART ARCHITECTURE DISPLAY
+st.markdown("### ⚖️ Engine Breakdown (Internal vs External)")
 
-st.markdown("---")
+ecol1, ecol2 = st.columns(2)
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    st.subheader("🛡️ Macro Regime")
-    st.write(f"**Status:** {regime_res['trade_permission']}")
-    for r in regime_res["reasons"]: st.caption(f"• {r}")
-with col2:
-    st.subheader("⚖️ OI Direction")
-    st.write(f"**Score:** {oi_res['score']:+.2f}")
-    for r in oi_res["reasons"]: st.caption(f"• {r}")
-with col3:
-    st.subheader("📊 Volume Gate")
-    st.write(f"**Status:** {vol_res['gate']}")
-    st.caption(f"• Ratio: {vol_res.get('ratio', 0):.1f}x baseline")
-    st.caption(f"• {vol_res['reason']}")
-with col4:
-    st.subheader("🎯 Near-ATM Change OI")
-    st.caption(f"ATM Strike: **{atm_strike}**")
-    st.caption(f"Call Chg: **{near_call_chg:+,}**")
-    st.caption(f"Put Chg: **{near_put_chg:+,}**")
-    st.caption(f"PCR: {pcr:.2f} | Fut Vol: {fut_vol:,}")
+with ecol1:
+    st.markdown('<div class="section-header">🌍 External Engine (Macro)</div>', unsafe_allow_html=True)
+    st.metric("WTI Impact", f"{wti_pct * -settings.CRUDE_WEIGHT:+.2f}%", "Bullish" if wti_pct < 0 else "Bearish", delta_color="normal")
+    st.metric("INR Impact", f"{inr_pct * -settings.INR_WEIGHT:+.2f}%", "Bullish" if inr_pct < 0 else "Bearish", delta_color="normal")
+    st.metric("Expected Nifty Move", f"{expected_nifty_pct:+.2f}%", f"Actual: {spot_pct:+.2f}%")
+    st.caption("External Score = (WTI Impact + INR Impact). Represents macro gravity.")
+
+with ecol2:
+    st.markdown('<div class="section-header">🔥 Internal Engine (Flow)</div>', unsafe_allow_html=True)
+    st.write(f"**Status:** {regime_res['trade_permission']} | **OI Score:** {oi_res['score']:+.2f}")
+    
+    st.markdown(f"""
+    **Volume Gate:** {vol_res['gate']} ({vol_res.get('ratio', 0):.1f}x baseline)  
+    **ATM Strike:** {atm_strike}  
+    **Near-ATM Call ΔOI:** {near_call_chg:+,}  
+    **Near-ATM Put ΔOI:** {near_put_chg:+,}  
+    **Overall PCR:** {pcr:.2f}  
+    **Futures Volume:** {fut_vol:,} | **Futures OI:** {fut_oi:,}
+    """)
+    
+    st.caption("Internal Score = OI Flow + Volume + Futures. Represents big money action.")
 
 st.markdown("---")
 st.caption(f"Data Status: {report['reason']} | Last updated: {now.strftime('%H:%M:%S IST')}")
