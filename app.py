@@ -243,6 +243,7 @@ with ecol2:
     st.write(f"**Status:** {regime_res['trade_permission']} | **OI Score:** {oi_res['score']:+.2f}")
     
     st.markdown(f"""
+    **VIX Status:** {vix_ltp:.2f} ({vix_pct:+.2f}%)  
     **Volume Gate:** {vol_res['gate']} ({vol_res.get('ratio', 0):.1f}x baseline)  
     **ATM Strike:** {atm_strike}  
     **Near-ATM Call ΔOI:** {near_call_chg:+,}  
