@@ -110,4 +110,16 @@ GAP_THRESHOLD_PCT = 0.50       # Min gap to trigger alert (tweak to 1.00 later a
 CRUDE_WEIGHT = 1.0             # Inverse impact of Crude on Nifty (Crude -1% -> Nifty +1%)
 INR_WEIGHT = 2.0               # Inverse impact of INR on Nifty (INR +1% -> Nifty -2%)
 
+# ============================================================
+# 14. INTERNAL vs EXTERNAL ENGINE WEIGHTS
+# ============================================================
+# External Engine (Macro)
+CRUDE_WEIGHT = 1.0       # 1% Crude drop = +1% Nifty impact
+INR_WEIGHT = 2.0         # 1% INR rise = -2% Nifty impact
+GAP_THRESHOLD_PCT = 0.50 # Minimum gap to trigger a Macro Alert
 
+# Internal Engine (Market Flow Weights - Tunable Later)
+OI_WEIGHT = 0.4          # OI Score contribution
+FUT_WEIGHT = 0.3         # Futures momentum contribution
+VOL_WEIGHT = 0.2         # Volume gate contribution
+VIX_WEIGHT = 0.1         # VIX contribution
