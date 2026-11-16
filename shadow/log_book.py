@@ -22,6 +22,7 @@ COLUMNS = [
     "total_call_chg", "total_put_chg", "pcr",
     "near_call_chg", "near_put_chg",
     "oi_score", "vol_ratio", "volume_gate", "regime_status", 
+    "alert_status", # <--- NEW COLUMN ADDED HERE
     "final_action", "position_cap", "reason"
 ]
 def _get_github_headers(token):
