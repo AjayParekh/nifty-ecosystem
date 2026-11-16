@@ -115,3 +115,34 @@ def get_historical_candle(instrument_key: str, unit: str, to_date: str, from_dat
         f"/v2/historical-candle/{quote(instrument_key, safe='')}/{unit}/{to_date}/{from_date}",
         {},
     )
+
+
+# ------------------------------------------------------- futures helper
+import gzip
+def get_nearest_futures_key(underlying_symbol="NIFTY"):
+    """Fetches the NSE instrument master and finds the nearest active Futures contract."""
+    try:
+        url = "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+        r = requests.get(url, timeout=15)
+        r.raise_for_status()
+        all_ins = json.loads(gzip.decompress(r.content))
+        
+        import datetime as dt
+        today = dt.date.today().isoformat()
+        futs = []
+        for i in all_ins:
+            if i.get("instrument_type") == "FUT" and i.get("underlying_symbol") == underlying_symbol:
+                # Expiry comes as a timestamp, convert to date string
+                exp_ts = i.get("expiry", 0) / 1000
+                exp_date = dt.datetime.fromtimestamp(exp_ts).date().isoformat()
+                if exp_date >= today:
+                    futs.append({"key": i["instrument_key"], "expiry": exp_date})
+        
+        if not futs:
+            return None
+            
+        # Sort by expiry and take the closest one
+        futs.sort(key=lambda x: x["expiry"])
+        return futs[0]["key"]
+    except Exception:
+        return None
