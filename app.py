@@ -108,7 +108,16 @@ if oi_resp and oi_resp.get("status") == "success":
                 near_call_chg += item.get("call_change_oi", 0) or 0
                 near_put_chg += item.get("put_change_oi", 0) or 0
 
-fut_q = upstox.get_quote(settings.NIFTY_FUT_KEY)
+# --- DYNAMIC FUTURES KEY FETCHING ---
+if "fut_key" not in st.session_state:
+    st.session_state.fut_key = upstox.get_nearest_futures_key("NIFTY")
+fut_key = st.session_state.fut_key
+
+if fut_key:
+    fut_q = upstox.get_quote(fut_key)
+else:
+    fut_q = None
+
 fut_price = fut_q.get("last_price", 0) if fut_q else 0
 fut_chg = fut_q.get("net_change", 0) if fut_q else 0
 fut_pct = (fut_chg / max(fut_price - fut_chg, 1)) * 100 if fut_q else 0
