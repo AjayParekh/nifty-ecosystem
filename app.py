@@ -141,7 +141,28 @@ oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, fut_oi * 0.99, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
-# --- 5. LOGGING ---
+# --- 5. ALERT STATUS DETERMINATION ---
+alert_status = "IN_SYNC"
+is_weekday = now.weekday() < 5
+is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
+
+if abs(external_gap) > settings.GAP_THRESHOLD_PCT and is_market_hours:
+    if external_gap > 0:
+        if vix_pct > 2.0:
+            alert_status = "TRAP_RISE_VIX_SPIKE"
+        elif spot_pct < 0:
+            alert_status = "TRAP_RISE_PRICE_FALLING"
+        else:
+            alert_status = "SAFE_GAP_RISE"
+    else:
+        if vix_pct < -2.0:
+            alert_status = "TRAP_DROP_VIX_FALLING"
+        elif spot_pct > 0:
+            alert_status = "TRAP_DROP_PRICE_RISING"
+        else:
+            alert_status = "SAFE_GAP_DROP"
+
+# --- 6. LOGGING ---
 log_row = {
     "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
     "nifty_spot": round(spot_price, 2), "nifty_chg": round(spot_chg, 2), "nifty_pct": round(spot_pct, 2),
@@ -162,20 +183,18 @@ log_row = {
     "vol_ratio": round(vol_res.get("ratio", 0), 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
+    "alert_status": alert_status, # <--- CAPTURED IN LOG
     "final_action": final_decision["action"],
     "position_cap": final_decision["position_cap"],
     "reason": " | ".join(final_decision["reasons"])
 }
 
-is_weekday = now.weekday() < 5
-is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
 if is_weekday and is_market_hours:
     log_book.save_log_to_github(log_row, st.secrets)
 
-# --- 6. UI RENDER ---
+# --- 7. UI RENDER ---
 st.title("🎯 Nifty Ecosystem Dashboard")
 
-# Top Row Cards
 def render_card(label, value, chg, pct, is_inr=False):
     cls = "pos" if chg >= 0 else "neg"
     arrow = "▲" if chg > 0 else "▼" if chg < 0 else "—"
@@ -201,22 +220,19 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-# EXTERNAL ENGINE ALERT
-if abs(external_gap) > settings.GAP_THRESHOLD_PCT and is_market_hours:
-    if external_gap > 0:
-        if vix_pct > 2.0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Wait for VIX to cool down.</div>', unsafe_allow_html=True)
-        elif spot_pct < 0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
-    else:
-        if vix_pct < -2.0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>.</div>', unsafe_allow_html=True)
-        elif spot_pct > 0:
-            st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{external_gap:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
+# EXTERNAL ENGINE ALERT UI
+if alert_status == "TRAP_RISE_VIX_SPIKE":
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Wait for VIX to cool down.</div>', unsafe_allow_html=True)
+elif alert_status == "TRAP_RISE_PRICE_FALLING":
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
+elif alert_status == "SAFE_GAP_RISE":
+    st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
+elif alert_status == "TRAP_DROP_VIX_FALLING":
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>.</div>', unsafe_allow_html=True)
+elif alert_status == "TRAP_DROP_PRICE_RISING":
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
+elif alert_status == "SAFE_GAP_DROP":
+    st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{external_gap:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="alert-box alert-info">⚪ <b>EXTERNAL MACRO IN SYNC</b> — Gap is {external_gap:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%.</div>', unsafe_allow_html=True)
 
