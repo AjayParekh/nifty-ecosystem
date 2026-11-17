@@ -95,8 +95,11 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
-    if total_call_oi > 0:
+    # PCR FIX: Fallback to Change OI if Total OI is zero
+    if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
+    elif total_call_chg > 0 and total_put_chg > 0:
+        pcr = total_put_chg / total_call_chg
 
     if spot_price > 0 and items:
         atm_item = min(items, key=lambda x: abs(x["strike_price"] - spot_price))
@@ -124,6 +127,12 @@ fut_pct = (fut_chg / max(fut_price - fut_chg, 1)) * 100 if fut_q else 0
 fut_vol = fut_q.get("volume", 0) if fut_q else 0
 fut_oi = fut_q.get("oi", 0) if fut_q else 0
 
+# --- TRACK PREVIOUS FUTURES OI FOR VOLUME GATE ---
+if "prev_fut_oi" not in st.session_state:
+    st.session_state.prev_fut_oi = fut_oi
+prev_fut_oi = st.session_state.prev_fut_oi
+st.session_state.prev_fut_oi = fut_oi
+
 tracker.record_spot(now, spot_price)
 tracker.record_oi(now, oi_resp)
 report = tracker.report(now)
@@ -135,10 +144,10 @@ vol_baseline = 10000
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 external_gap = expected_nifty_pct - spot_pct
 
-# Internal Engine
+# Internal Engine (Using the real prev_fut_oi now)
 regime_res = regime_factor.evaluate_regime(vix_ltp, vix_pct, wti_ltp, wti_pct, inr_pct)
 oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
-vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, fut_oi * 0.99, vol_baseline)
+vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, prev_fut_oi, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
 # --- 5. ALERT STATUS DETERMINATION ---
@@ -183,7 +192,7 @@ log_row = {
     "vol_ratio": round(vol_res.get("ratio", 0), 2),
     "volume_gate": vol_res["gate"],
     "regime_status": regime_res["trade_permission"],
-    "alert_status": alert_status, # <--- CAPTURED IN LOG
+    "alert_status": alert_status,
     "final_action": final_decision["action"],
     "position_cap": final_decision["position_cap"],
     "reason": " | ".join(final_decision["reasons"])
