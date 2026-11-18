@@ -70,9 +70,23 @@ inr_ltp = macro_data["inr"]["ltp"] if macro_data and macro_data["inr"] else 0
 inr_chg = macro_data["inr"]["chg"] if macro_data and macro_data["inr"] else 0
 inr_pct = macro_data["inr_pct"] if macro_data else 0
 
-days_until_tuesday = (1 - now.weekday()) % 7
-expiry_date = (now + dt.timedelta(days=days_until_tuesday)).strftime('%Y-%m-%d')
 today_str = now.strftime('%Y-%m-%d')
+
+# --- DYNAMIC EXPIRY FETCHING ---
+if "nearest_expiry" not in st.session_state:
+    contracts = upstox.get_option_contracts(settings.NIFTY_INDEX_KEY)
+    valid_expiries = []
+    for c in contracts:
+        exp = c.get("expiry")
+        if exp and exp >= today_str:
+            valid_expiries.append(exp)
+            
+    if valid_expiries:
+        st.session_state.nearest_expiry = sorted(valid_expiries)[0]
+    else:
+        st.session_state.nearest_expiry = today_str
+
+expiry_date = st.session_state.nearest_expiry
 
 oi_resp = upstox.get_change_oi(settings.NIFTY_INDEX_KEY, expiry_date, today_str)
 
@@ -89,7 +103,6 @@ atm_strike = 0
 if oi_resp and oi_resp.get("status") == "success":
     data_block = oi_resp.get("data")
     
-    # DEFENSIVE FIX: Handle list vs dict from Upstox
     if isinstance(data_block, list):
         items = data_block
     elif isinstance(data_block, dict):
@@ -275,7 +288,8 @@ with ecol1:
 
 with ecol2:
     st.markdown('<div class="section-header">🔥 Internal Engine (Flow)</div>', unsafe_allow_html=True)
-    st.write(f"**Status:** {regime_res['trade_permission']} | **OI Score:** {oi_res['score']:+.2f}")
+    # --- HERE IS THE SMALL CHANGE: Added Expiry Date ---
+    st.write(f"**Status:** {regime_res['trade_permission']} | **OI Score:** {oi_res['score']:+.2f} | **Expiry:** {expiry_date}")
     
     st.markdown(f"""
     **VIX Status:** {vix_ltp:.2f} ({vix_pct:+.2f}%)  
