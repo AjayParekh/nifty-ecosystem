@@ -87,7 +87,15 @@ near_put_chg = 0
 atm_strike = 0
 
 if oi_resp and oi_resp.get("status") == "success":
-    items = oi_resp.get("data", {}).get("call_put_oi_data_list", [])
+    data_block = oi_resp.get("data")
+    
+    # DEFENSIVE FIX: Handle list vs dict from Upstox
+    if isinstance(data_block, list):
+        items = data_block
+    elif isinstance(data_block, dict):
+        items = data_block.get("call_put_oi_data_list") or []
+    else:
+        items = []
     
     for item in items:
         total_call_chg += item.get("call_change_oi", 0) or 0
@@ -95,19 +103,18 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
-    # PCR FIX: Fallback to Change OI if Total OI is zero
     if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
     elif total_call_chg > 0 and total_put_chg > 0:
         pcr = total_put_chg / total_call_chg
 
     if spot_price > 0 and items:
-        atm_item = min(items, key=lambda x: abs(x["strike_price"] - spot_price))
-        atm_strike = atm_item["strike_price"]
+        atm_item = min(items, key=lambda x: abs(x.get("strike_price", 0) - spot_price))
+        atm_strike = atm_item.get("strike_price", 0)
         strike_window = 150
         
         for item in items:
-            if abs(item["strike_price"] - atm_strike) <= strike_window:
+            if abs(item.get("strike_price", 0) - atm_strike) <= strike_window:
                 near_call_chg += item.get("call_change_oi", 0) or 0
                 near_put_chg += item.get("put_change_oi", 0) or 0
 
@@ -140,11 +147,9 @@ report = tracker.report(now)
 vol_baseline = 10000 
 
 # --- 4. EVALUATION (Internal vs External) ---
-# External Engine
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 external_gap = expected_nifty_pct - spot_pct
 
-# Internal Engine (Using the real prev_fut_oi now)
 regime_res = regime_factor.evaluate_regime(vix_ltp, vix_pct, wti_ltp, wti_pct, inr_pct)
 oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, prev_fut_oi, vol_baseline)
@@ -229,7 +234,6 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-# EXTERNAL ENGINE ALERT UI
 if alert_status == "TRAP_RISE_VIX_SPIKE":
     st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Wait for VIX to cool down.</div>', unsafe_allow_html=True)
 elif alert_status == "TRAP_RISE_PRICE_FALLING":
@@ -245,8 +249,6 @@ elif alert_status == "SAFE_GAP_DROP":
 else:
     st.markdown(f'<div class="alert-box alert-info">⚪ <b>EXTERNAL MACRO IN SYNC</b> — Gap is {external_gap:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%.</div>', unsafe_allow_html=True)
 
-
-# FINAL DECISION BOX
 action = final_decision["action"]
 css_class = "neutral"
 if "BUY" in action: css_class = "buy"
@@ -260,7 +262,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# TWO-PART ARCHITECTURE DISPLAY
 st.markdown("### ⚖️ Engine Breakdown (Internal vs External)")
 
 ecol1, ecol2 = st.columns(2)
