@@ -247,20 +247,26 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-if alert_status == "TRAP_RISE_VIX_SPIKE":
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, but VIX is Spiking)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>. However, VIX is spiking <b>{vix_pct:+.2f}%</b>. Wait for VIX to cool down.</div>', unsafe_allow_html=True)
-elif alert_status == "TRAP_RISE_PRICE_FALLING":
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Rise Expected, But Nifty is Falling)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b>, but it is down <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
-elif alert_status == "SAFE_GAP_RISE":
-    st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Rise Expected)</b><br>Macro implies Nifty should be up <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
-elif alert_status == "TRAP_DROP_VIX_FALLING":
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, but VIX is Falling)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>. However, VIX is dropping <b>{vix_pct:+.2f}%</b>.</div>', unsafe_allow_html=True)
-elif alert_status == "TRAP_DROP_PRICE_RISING":
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>TRAP ALERT (Drop Expected, But Nifty is Rising)</b><br>Macro implies Nifty should be down <b>{external_gap:+.2f}%</b>, but it is up <b>{spot_pct:.2f}%</b>.</div>', unsafe_allow_html=True)
-elif alert_status == "SAFE_GAP_DROP":
-    st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT (Drop Expected)</b><br>Macro implies Nifty should drop <b>{external_gap:+.2f}%</b> more. VIX is supportive ({vix_pct:+.2f}%).</div>', unsafe_allow_html=True)
+# --- EXTERNAL ENGINE ALERT UI (NEW SCREAMING TRAP WARNING) ---
+if "TRAP" in alert_status:
+    st.markdown(f"""
+    <div style="background-color: #dc3545; color: white; padding: 30px; border-radius: 15px; text-align: center; margin-bottom: 20px; border: 5px solid #721c24; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.5);">
+        <h1 style="margin: 0; font-size: 3rem; text-transform: uppercase; text-shadow: 2px 2px 4px #000;">🛑 TRAP DETECTED 🛑</h1>
+        <h3 style="margin-top: 10px; font-size: 1.8rem;">DO NOT TRADE. The Macro Gap is lying to you.</h3>
+        <p style="font-size: 1.3rem; margin-top: 15px; font-weight: bold;">
+            Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging.<br>
+            VIX is spiking ({vix_pct:+.2f}%) and/or Price is moving in the wrong direction.
+        </p>
+        <p style="font-size: 1.2rem; margin-top: 10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+            Reason: {alert_status}
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+elif "SAFE" in alert_status:
+    st.markdown(f'<div class="alert-box alert-safe" style="font-size: 1.2rem; padding: 20px;">🚨 <b>SAFE GAP ALERT</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%). <br><b>⚠️ WAIT for the Internal Engine to say CONFIRM BUY/SELL before trading.</b></div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="alert-box alert-info">⚪ <b>EXTERNAL MACRO IN SYNC</b> — Gap is {external_gap:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%.</div>', unsafe_allow_html=True)
+
 
 action = final_decision["action"]
 css_class = "neutral"
@@ -288,7 +294,6 @@ with ecol1:
 
 with ecol2:
     st.markdown('<div class="section-header">🔥 Internal Engine (Flow)</div>', unsafe_allow_html=True)
-    # --- HERE IS THE SMALL CHANGE: Added Expiry Date ---
     st.write(f"**Status:** {regime_res['trade_permission']} | **OI Score:** {oi_res['score']:+.2f} | **Expiry:** {expiry_date}")
     
     st.markdown(f"""
