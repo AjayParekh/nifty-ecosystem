@@ -247,23 +247,11 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 
 st.markdown("---")
 
-# --- EXTERNAL ENGINE ALERT UI (NEW SCREAMING TRAP WARNING) ---
+# --- EXTERNAL ENGINE ALERT UI (REVERTED TO SMALL BOXES) ---
 if "TRAP" in alert_status:
-    st.markdown(f"""
-    <div style="background-color: #dc3545; color: white; padding: 30px; border-radius: 15px; text-align: center; margin-bottom: 20px; border: 5px solid #721c24; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.5);">
-        <h1 style="margin: 0; font-size: 3rem; text-transform: uppercase; text-shadow: 2px 2px 4px #000;">🛑 TRAP DETECTED 🛑</h1>
-        <h3 style="margin-top: 10px; font-size: 1.8rem;">DO NOT TRADE. The Macro Gap is lying to you.</h3>
-        <p style="font-size: 1.3rem; margin-top: 15px; font-weight: bold;">
-            Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging.<br>
-            VIX is spiking ({vix_pct:+.2f}%) and/or Price is moving in the wrong direction.
-        </p>
-        <p style="font-size: 1.2rem; margin-top: 10px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-            Reason: {alert_status}
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>{alert_status.replace("_", " ")}</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging (VIX: {vix_pct:+.2f}%, Price: {spot_pct:+.2f}%). <br><b>DO NOT TRADE THE GAP.</b> Wait for the Internal Engine to confirm.</div>', unsafe_allow_html=True)
 elif "SAFE" in alert_status:
-    st.markdown(f'<div class="alert-box alert-safe" style="font-size: 1.2rem; padding: 20px;">🚨 <b>SAFE GAP ALERT</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%). <br><b>⚠️ WAIT for the Internal Engine to say CONFIRM BUY/SELL before trading.</b></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b> more. VIX is calm ({vix_pct:+.2f}%). <br><b>⚠️ WAIT for the Internal Engine to say CONFIRM BUY/SELL before trading.</b></div>', unsafe_allow_html=True)
 else:
     st.markdown(f'<div class="alert-box alert-info">⚪ <b>EXTERNAL MACRO IN SYNC</b> — Gap is {external_gap:+.2f}% (Threshold: {settings.GAP_THRESHOLD_PCT}%). VIX is at {vix_pct:+.2f}%.</div>', unsafe_allow_html=True)
 
