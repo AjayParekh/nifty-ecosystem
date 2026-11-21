@@ -215,6 +215,8 @@ current_premium = 0
 pnl_points = 0
 pnl_inr = 0
 pnl_pct = 0
+atm_ce_vol = 0
+atm_pe_vol = 0
 
 if "CONFIRM" in final_decision["action"] and atm_strike > 0:
     trade_action = "BUY"
@@ -251,6 +253,12 @@ if st.session_state.active_trade:
         pnl_inr = pnl_points * LOT_SIZE
         pnl_pct = (pnl_points / entry_premium) * 100
         trade_action = "ACTIVE"
+
+if atm_strike > 0:
+    ce_key = strike_map.get(atm_strike, {}).get("CE")
+    pe_key = strike_map.get(atm_strike, {}).get("PE")
+    atm_ce_vol = quotes_data.get(ce_key, {}).get("volume", 0) or 0
+    atm_pe_vol = quotes_data.get(pe_key, {}).get("volume", 0) or 0
 
 # --- 6. ALERT STATUS DETERMINATION ---
 alert_status = "IN_SYNC"
@@ -294,9 +302,11 @@ log_row = {
     "atm_ce_delta": round(greeks_data.get(strike_map.get(atm_strike, {}).get("CE"), {}).get("delta", 0) or 0, 3), 
     "atm_ce_theta": round(greeks_data.get(strike_map.get(atm_strike, {}).get("CE"), {}).get("theta", 0) or 0, 2), 
     "atm_ce_iv": round(greeks_data.get(strike_map.get(atm_strike, {}).get("CE"), {}).get("iv", 0) or 0, 2),
+    "atm_ce_vol": atm_ce_vol,
     "atm_pe_delta": round(greeks_data.get(strike_map.get(atm_strike, {}).get("PE"), {}).get("delta", 0) or 0, 3), 
     "atm_pe_theta": round(greeks_data.get(strike_map.get(atm_strike, {}).get("PE"), {}).get("theta", 0) or 0, 2), 
     "atm_pe_iv": round(greeks_data.get(strike_map.get(atm_strike, {}).get("PE"), {}).get("iv", 0) or 0, 2),
+    "atm_pe_vol": atm_pe_vol,
     "final_action": final_decision["action"],
     "position_cap": final_decision["position_cap"],
     "reason": " | ".join(final_decision["reasons"])
@@ -415,28 +425,31 @@ if sorted_strikes and greeks_data:
         
         ce_prem = quotes_data.get(ce_k, {}).get("last_price", 0)
         pe_prem = quotes_data.get(pe_k, {}).get("last_price", 0)
+        ce_vol_val = quotes_data.get(ce_k, {}).get("volume", 0)
+        pe_vol_val = quotes_data.get(pe_k, {}).get("volume", 0)
         
         greeks_table.append({
             "Strike": s,
             "Type": "ATM" if s == atm_strike else ("ITM" if s < atm_strike else "OTM"),
             "CE Premium": ce_prem,
-            "CE Lot Size": LOT_SIZE,
-            "CE Amount": ce_prem * LOT_SIZE,
+            "CE Volume": ce_vol_val,
+            "CE Amount (x65)": ce_prem * LOT_SIZE,
             "CE Delta": ce_d.get("delta", 0),
             "CE Theta": ce_d.get("theta", 0),
             "CE IV": ce_d.get("iv", 0),
             "PE Premium": pe_prem,
-            "PE Lot Size": LOT_SIZE,
-            "PE Amount": pe_prem * LOT_SIZE,
+            "PE Volume": pe_vol_val,
+            "PE Amount (x65)": pe_prem * LOT_SIZE,
             "PE Delta": pe_d.get("delta", 0),
             "PE Theta": pe_d.get("theta", 0),
             "PE IV": pe_d.get("iv", 0),
             "IV Skew": (pe_d.get("iv", 0) or 0) - (ce_d.get("iv", 0) or 0),
         })
     st.dataframe(pd.DataFrame(greeks_table).style.format({
-        "CE Premium": "{:.2f}", "CE Amount": "{:.2f}",
-        "PE Premium": "{:.2f}", "PE Amount": "{:.2f}",
-        "CE Delta": "{:.3f}", "PE Delta": "{:.3f}"
+        "CE Premium": "{:.2f}", "CE Amount (x65)": "{:.2f}",
+        "PE Premium": "{:.2f}", "PE Amount (x65)": "{:.2f}",
+        "CE Delta": "{:.3f}", "PE Delta": "{:.3f}", 
+        "CE Volume": "{:.0f}", "PE Volume": "{:.0f}"
     }), use_container_width=True)
 else:
     st.warning("Option Greeks data not available.")
