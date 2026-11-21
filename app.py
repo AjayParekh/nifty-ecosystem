@@ -10,7 +10,7 @@ from data_layer import macro_client
 from data_layer.freshness import FreshnessTracker
 from factors import oi_factor, volume_factor, regime_factor, confluence
 from shadow import log_book
-import analyzer # <--- IMPORTING THE NEW ANALYZER
+import analyzer
 
 # --- 1. PAGE CONFIG & STYLES ---
 st.set_page_config(page_title="Nifty Ecosystem", page_icon="🎯", layout="wide")
@@ -159,10 +159,13 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
+    # PCR FIX: Sanity Check
     if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
+        if pcr > 5.0: pcr = 0.0
     elif total_call_chg > 0 and total_put_chg > 0:
         pcr = total_put_chg / total_call_chg
+        if pcr > 5.0: pcr = 0.0
 
     if spot_price > 0 and items:
         for item in items:
@@ -198,7 +201,7 @@ report = tracker.report(now)
 
 vol_baseline = 10000 
 
-# --- 4. EVALUATION ---
+# --- 4. EVALUATION (NO TRAP OVERRIDE) ---
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 external_gap = expected_nifty_pct - spot_pct
 
@@ -207,7 +210,22 @@ oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, prev_fut_oi, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
 
-# --- 5. TRADE EXECUTOR & P&L LOGIC ---
+# --- 5. ALERT STATUS DETERMINATION ---
+alert_status = "IN_SYNC"
+is_weekday = now.weekday() < 5
+is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
+
+if abs(external_gap) > settings.GAP_THRESHOLD_PCT and is_market_hours:
+    if external_gap > 0:
+        if vix_pct > 2.0: alert_status = "TRAP_RISE_VIX_SPIKE"
+        elif spot_pct < 0: alert_status = "TRAP_RISE_PRICE_FALLING"
+        else: alert_status = "SAFE_GAP_RISE"
+    else:
+        if vix_pct < -2.0: alert_status = "TRAP_DROP_VIX_FALLING"
+        elif spot_pct > 0: alert_status = "TRAP_DROP_PRICE_RISING"
+        else: alert_status = "SAFE_GAP_DROP"
+
+# --- 6. TRADE EXECUTOR & P&L LOGIC ---
 trade_action = "NONE"
 trade_strike = 0
 trade_type = "NONE"
@@ -260,21 +278,6 @@ if atm_strike > 0:
     pe_key = strike_map.get(atm_strike, {}).get("PE")
     atm_ce_vol = quotes_data.get(ce_key, {}).get("volume", 0) or 0
     atm_pe_vol = quotes_data.get(pe_key, {}).get("volume", 0) or 0
-
-# --- 6. ALERT STATUS DETERMINATION ---
-alert_status = "IN_SYNC"
-is_weekday = now.weekday() < 5
-is_market_hours = dt.time(9, 0) <= now.time() <= dt.time(16, 0)
-
-if abs(external_gap) > settings.GAP_THRESHOLD_PCT and is_market_hours:
-    if external_gap > 0:
-        if vix_pct > 2.0: alert_status = "TRAP_RISE_VIX_SPIKE"
-        elif spot_pct < 0: alert_status = "TRAP_RISE_PRICE_FALLING"
-        else: alert_status = "SAFE_GAP_RISE"
-    else:
-        if vix_pct < -2.0: alert_status = "TRAP_DROP_VIX_FALLING"
-        elif spot_pct > 0: alert_status = "TRAP_DROP_PRICE_RISING"
-        else: alert_status = "SAFE_GAP_DROP"
 
 # --- 7. LOGGING ---
 log_row = {
@@ -338,7 +341,7 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 st.markdown("---")
 
 if "TRAP" in alert_status:
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>{alert_status.replace("_", " ")}</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging. <b>DO NOT TRADE THE GAP.</b></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>{alert_status.replace("_", " ")}</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging. <b>WAIT FOR INTERNAL CONFIRMATION.</b></div>', unsafe_allow_html=True)
 elif "SAFE" in alert_status:
     st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b> more. <b>⚠️ WAIT for the Internal Engine to say CONFIRM.</b></div>', unsafe_allow_html=True)
 else:
@@ -479,7 +482,7 @@ with ecol2:
 
 # --- 📊 AUTOMATIC HISTORICAL ANALYZER ---
 st.markdown("---")
-st.markdown("### 📊 Automatic Historical Analyzer (Cached 1 Hour)")
+st.markdown("### 📊 Automatic Historical Analyzer")
 st.write("Fetching logs from GitHub and analyzing performance automatically in the background.")
 
 @st.cache_data(ttl=3600, show_spinner="Analyzing historical logs from GitHub...")
@@ -488,7 +491,6 @@ def get_auto_analysis(secrets_dict):
     trades_df, summary = analyzer.analyze_trades(df)
     return trades_df, summary
 
-# Run the analysis
 trades_df, summary = get_auto_analysis(dict(st.secrets))
 
 if summary:
