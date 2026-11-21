@@ -10,6 +10,7 @@ from data_layer import macro_client
 from data_layer.freshness import FreshnessTracker
 from factors import oi_factor, volume_factor, regime_factor, confluence
 from shadow import log_book
+import analyzer # <--- IMPORTING THE NEW ANALYZER
 
 # --- 1. PAGE CONFIG & STYLES ---
 st.set_page_config(page_title="Nifty Ecosystem", page_icon="🎯", layout="wide")
@@ -475,6 +476,49 @@ with ecol2:
     **Overall PCR:** {pcr:.2f}  
     **Futures Volume:** {fut_vol:,} | **Futures OI:** {fut_oi:,}
     """)
+
+# --- 📊 AUTOMATIC HISTORICAL ANALYZER ---
+st.markdown("---")
+st.markdown("### 📊 Automatic Historical Analyzer (Cached 1 Hour)")
+st.write("Fetching logs from GitHub and analyzing performance automatically in the background.")
+
+@st.cache_data(ttl=3600, show_spinner="Analyzing historical logs from GitHub...")
+def get_auto_analysis(secrets_dict):
+    df = analyzer.fetch_logs_from_github(secrets_dict)
+    trades_df, summary = analyzer.analyze_trades(df)
+    return trades_df, summary
+
+# Run the analysis
+trades_df, summary = get_auto_analysis(dict(st.secrets))
+
+if summary:
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Total Trades", summary["total_trades"])
+    m2.metric("Win Rate", f"{summary['win_rate']:.1f}%", f"{summary['wins']}W / {summary['losses']}L")
+    m3.metric("Total P&L (INR)", f"₹{summary['total_pnl']:,.2f}")
+    
+    st.dataframe(trades_df.style.format({
+        "Entry Premium": "₹{:.2f}", "Max Profit (pts)": "{:.2f}", 
+        "Max Loss (pts)": "{:.2f}", "P&L (INR)": "₹{:.2f}",
+        "Entry Delta": "{:.3f}", "Entry IV": "{:.2f}", "Entry Gap": "{:.2f}%"
+    }), use_container_width=True)
+    
+    st.markdown("#### 🔍 Win vs Loss Characteristics")
+    win_df = trades_df[trades_df["Outcome"].str.contains("WIN")]
+    loss_df = trades_df[trades_df["Outcome"].str.contains("LOSS")]
+    
+    if not win_df.empty and not loss_df.empty:
+        g1, g2 = st.columns(2)
+        with g1:
+            st.write("**Winning Trades**")
+            st.write(f"Avg Delta: {win_df['Entry Delta'].mean():.3f}")
+            st.write(f"Avg IV: {win_df['Entry IV'].mean():.2f}%")
+        with g2:
+            st.write("**Losing Trades**")
+            st.write(f"Avg Delta: {loss_df['Entry Delta'].mean():.3f}")
+            st.write(f"Avg IV: {loss_df['Entry IV'].mean():.2f}%")
+else:
+    st.info("Waiting for more trade logs to analyze. Continue trading to generate data!")
 
 st.markdown("---")
 st.caption(f"Data Status: {report['reason']} | Last updated: {now.strftime('%H:%M:%S IST')}")
