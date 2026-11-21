@@ -26,7 +26,10 @@ def fetch_logs_from_github(secrets):
         for f in files:
             f_res = requests.get(f["download_url"], timeout=10)
             if f_res.status_code == 200:
-                dfs.append(pd.read_csv(io.StringIO(f_res.text)))
+                temp_df = pd.read_csv(io.StringIO(f_res.text))
+                # Only keep dataframes that have the new trade logging columns
+                if "trade_action" in temp_df.columns and "pnl_points" in temp_df.columns:
+                    dfs.append(temp_df)
                 
         if not dfs:
             return pd.DataFrame()
@@ -42,6 +45,10 @@ def analyze_trades(df):
     if df.empty:
         return None, None
         
+    # Ensure the required columns exist before filtering
+    if "trade_action" not in df.columns:
+        return None, None
+
     active_df = df[df["trade_action"] == "ACTIVE"].copy()
     if active_df.empty:
         return None, None
