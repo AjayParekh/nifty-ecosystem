@@ -159,7 +159,7 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
-    # PCR FIX: Sanity Check
+    # PCR SANITY CHECK (The Fix)
     if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
         if pcr > 5.0: pcr = 0.0
@@ -201,7 +201,7 @@ report = tracker.report(now)
 
 vol_baseline = 10000 
 
-# --- 4. EVALUATION (NO TRAP OVERRIDE) ---
+# --- 4. EVALUATION (CORE LOGIC - UNTOUCHED) ---
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 external_gap = expected_nifty_pct - spot_pct
 
@@ -341,7 +341,7 @@ with c5: st.markdown(render_card("USD/INR", inr_ltp, inr_chg, inr_pct, is_inr=Tr
 st.markdown("---")
 
 if "TRAP" in alert_status:
-    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>{alert_status.replace("_", " ")}</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging. <b>WAIT FOR INTERNAL CONFIRMATION.</b></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="alert-box alert-trap">🛑 <b>{alert_status.replace("_", " ")}</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b>, but the Internal Flow is diverging. <b>DO NOT TRADE THE GAP.</b></div>', unsafe_allow_html=True)
 elif "SAFE" in alert_status:
     st.markdown(f'<div class="alert-box alert-safe">🚨 <b>SAFE GAP ALERT</b><br>Macro implies Nifty should move <b>{external_gap:+.2f}%</b> more. <b>⚠️ WAIT for the Internal Engine to say CONFIRM.</b></div>', unsafe_allow_html=True)
 else:
