@@ -124,7 +124,7 @@ if spot_price > 0:
             if "PE" in strike_map[s]: greek_keys.append(strike_map[s]["PE"])
             
         greeks_data = upstox.get_option_greeks(greek_keys)
-        quotes_data = upstox.get_quotes_bulk(greek_keys) # Get LTPs for the 5 strikes
+        quotes_data = upstox.get_quotes_bulk(greek_keys)
     else:
         atm_strike = 0
         greeks_data = {}
@@ -216,7 +216,6 @@ pnl_points = 0
 pnl_inr = 0
 pnl_pct = 0
 
-# If a NEW CONFIRM signal fires, lock in the trade
 if "CONFIRM" in final_decision["action"] and atm_strike > 0:
     trade_action = "BUY"
     trade_strike = atm_strike
@@ -226,7 +225,6 @@ if "CONFIRM" in final_decision["action"] and atm_strike > 0:
     opt_ltp = quotes_data.get(opt_key, {}).get("last_price", 0) if opt_key else 0
     
     if opt_ltp > 0:
-        # Check if we need to create a new trade (different strike/type or no active trade)
         if not st.session_state.active_trade or \
            st.session_state.active_trade["strike"] != trade_strike or \
            st.session_state.active_trade["type"] != trade_type:
@@ -238,7 +236,6 @@ if "CONFIRM" in final_decision["action"] and atm_strike > 0:
                 "entry_time": now
             }
 
-# If there is an active trade, calculate live PnL
 if st.session_state.active_trade:
     t = st.session_state.active_trade
     trade_strike = t["strike"]
@@ -246,7 +243,6 @@ if st.session_state.active_trade:
     entry_premium = t["entry_ltp"]
     
     opt_key = strike_map.get(trade_strike, {}).get(trade_type)
-    # Fetch live LTP for the active trade option
     live_q = upstox.get_quote(opt_key) if opt_key else None
     current_premium = live_q.get("last_price", 0) if live_q else 0
     
@@ -417,20 +413,31 @@ if sorted_strikes and greeks_data:
         ce_d = greeks_data.get(ce_k, {})
         pe_d = greeks_data.get(pe_k, {})
         
+        ce_prem = quotes_data.get(ce_k, {}).get("last_price", 0)
+        pe_prem = quotes_data.get(pe_k, {}).get("last_price", 0)
+        
         greeks_table.append({
             "Strike": s,
             "Type": "ATM" if s == atm_strike else ("ITM" if s < atm_strike else "OTM"),
-            "CE Premium": quotes_data.get(ce_k, {}).get("last_price", 0),
+            "CE Premium": ce_prem,
+            "CE Lot Size": LOT_SIZE,
+            "CE Amount": ce_prem * LOT_SIZE,
             "CE Delta": ce_d.get("delta", 0),
             "CE Theta": ce_d.get("theta", 0),
             "CE IV": ce_d.get("iv", 0),
-            "PE Premium": quotes_data.get(pe_k, {}).get("last_price", 0),
+            "PE Premium": pe_prem,
+            "PE Lot Size": LOT_SIZE,
+            "PE Amount": pe_prem * LOT_SIZE,
             "PE Delta": pe_d.get("delta", 0),
             "PE Theta": pe_d.get("theta", 0),
             "PE IV": pe_d.get("iv", 0),
             "IV Skew": (pe_d.get("iv", 0) or 0) - (ce_d.get("iv", 0) or 0),
         })
-    st.dataframe(pd.DataFrame(greeks_table).style.format({"CE Premium": "{:.2f}", "PE Premium": "{:.2f}", "CE Delta": "{:.3f}", "PE Delta": "{:.3f}"}), use_container_width=True)
+    st.dataframe(pd.DataFrame(greeks_table).style.format({
+        "CE Premium": "{:.2f}", "CE Amount": "{:.2f}",
+        "PE Premium": "{:.2f}", "PE Amount": "{:.2f}",
+        "CE Delta": "{:.3f}", "PE Delta": "{:.3f}"
+    }), use_container_width=True)
 else:
     st.warning("Option Greeks data not available.")
 
