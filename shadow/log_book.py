@@ -26,8 +26,8 @@ COLUMNS = [
     "trade_action", "trade_strike", "trade_type",
     "entry_premium", "current_premium", 
     "pnl_points", "pnl_inr", "pnl_pct",
-    "atm_ce_delta", "atm_ce_theta", "atm_ce_iv", 
-    "atm_pe_delta", "atm_pe_theta", "atm_pe_iv",
+    "atm_ce_delta", "atm_ce_theta", "atm_ce_iv", "atm_ce_vol",
+    "atm_pe_delta", "atm_pe_theta", "atm_pe_iv", "atm_pe_vol",
     "final_action", "position_cap", "reason"
 ]
 def _get_github_headers(token):
