@@ -7,6 +7,8 @@ import csv
 import datetime as dt
 import io
 import requests
+import time
+import random
 
 COLUMNS = [
     "timestamp", 
@@ -30,13 +32,14 @@ COLUMNS = [
     "atm_pe_delta", "atm_pe_theta", "atm_pe_iv", "atm_pe_vol",
     "final_action", "position_cap", "reason"
 ]
+
 def _get_github_headers(token):
     return {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
 
 def save_log_to_github(row_dict, secrets):
     """
     Appends a row to today's CSV file on GitHub.
-    Expects secrets to contain: GITHUB_LOG_TOKEN, GITHUB_LOG_REPO
+    Includes retry logic to handle multiple machines writing at the same time.
     """
     try:
         token = secrets["GITHUB_LOG_TOKEN"]
@@ -49,41 +52,53 @@ def save_log_to_github(row_dict, secrets):
     url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
     headers = _get_github_headers(token)
 
-    # 1. Try to get existing file to append
-    r = requests.get(url, headers=headers)
-    sha = None
-    existing_rows = []
-    
-    if r.status_code == 200:
-        data = r.json()
-        sha = data["sha"]
-        content = base64.b64decode(data["content"]).decode("utf-8")
-        reader = csv.DictReader(io.StringIO(content))
-        existing_rows = list(reader)
-    elif r.status_code != 404:
-        return f"GitHub read error: {r.status_code}"
+    max_retries = 3
+    for attempt in range(max_retries):
+        # 1. Tiny random delay to prevent machines from hitting GitHub at the exact same millisecond
+        time.sleep(random.uniform(0.1, 0.5))
 
-    # 2. Append new row
-    existing_rows.append(row_dict)
+        # 2. Try to get the latest existing file
+        r = requests.get(url, headers=headers)
+        sha = None
+        existing_rows = []
+        
+        if r.status_code == 200:
+            data = r.json()
+            sha = data["sha"]
+            content = base64.b64decode(data["content"]).decode("utf-8")
+            reader = csv.DictReader(io.StringIO(content))
+            existing_rows = list(reader)
+        elif r.status_code != 404:
+            return f"GitHub read error: {r.status_code}"
 
-    # 3. Create new CSV content
-    out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=COLUMNS)
-    writer.writeheader()
-    writer.writerows(existing_rows)
-    new_content = out.getvalue()
+        # 3. Append the new row
+        existing_rows.append(row_dict)
 
-    # 4. Push back to GitHub
-    payload = {
-        "message": f"Log update for {date_str}",
-        "content": base64.b64encode(new_content.encode("utf-8")).decode("ascii"),
-        "branch": "main"
-    }
-    if sha:
-        payload["sha"] = sha
+        # 4. Create the new CSV content
+        out = io.StringIO()
+        writer = csv.DictWriter(out, fieldnames=COLUMNS, extrasaction="ignore", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(existing_rows)
+        new_content = out.getvalue()
 
-    r_put = requests.put(url, headers=headers, json=payload)
-    if r_put.status_code in (200, 201):
-        return "Success"
-    else:
-        return f"GitHub write error: {r_put.status_code}"
+        # 5. Push back to GitHub
+        payload = {
+            "message": f"Log update for {date_str} (Attempt {attempt+1})",
+            "content": base64.b64encode(new_content.encode("utf-8")).decode("ascii"),
+            "branch": "main"
+        }
+        if sha:
+            payload["sha"] = sha
+
+        r_put = requests.put(url, headers=headers, json=payload)
+        
+        if r_put.status_code in (200, 201):
+            return "Success"
+        elif r_put.status_code == 409:
+            # Conflict! Another machine updated the file first. 
+            # We loop back, fetch the new SHA, and try again.
+            continue
+        else:
+            return f"GitHub write error: {r_put.status_code}"
+
+    return "Failed after max retries"
