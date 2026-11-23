@@ -3,6 +3,7 @@ import datetime as dt
 import pytz
 import pandas as pd
 from streamlit_autorefresh import st_autorefresh
+import uuid
 
 from config import settings
 from data_layer import upstox_client as upstox
@@ -55,6 +56,10 @@ tracker = st.session_state.tracker
 
 if "active_trade" not in st.session_state:
     st.session_state.active_trade = None
+
+# --- UNIQUE SESSION ID FOR MULTI-MACHINE LOGGING ---
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())[:6]
 
 # --- 3. DATA FETCHING ---
 spot_q = upstox.get_quote(settings.NIFTY_INDEX_KEY)
@@ -159,7 +164,7 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
-    # PCR SANITY CHECK (The Fix)
+    # PCR SANITY CHECK
     if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
         if pcr > 5.0: pcr = 0.0
@@ -317,7 +322,7 @@ log_row = {
 }
 
 if is_weekday and is_market_hours:
-    log_book.save_log_to_github(log_row, st.secrets)
+    log_book.save_log_to_github(log_row, st.secrets, st.session_state.session_id)
 
 # --- 8. UI RENDER ---
 st.title("🎯 Nifty Ecosystem Dashboard")
