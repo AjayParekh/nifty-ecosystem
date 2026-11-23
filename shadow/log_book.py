@@ -1,6 +1,7 @@
 """
 shadow/log_book.py
 Handles saving the daily logs to a private GitHub repository.
+Uses a unique session ID to prevent conflicts when multiple machines are open.
 """
 import base64
 import csv
@@ -36,10 +37,9 @@ COLUMNS = [
 def _get_github_headers(token):
     return {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
 
-def save_log_to_github(row_dict, secrets):
+def save_log_to_github(row_dict, secrets, session_id="main"):
     """
-    Appends a row to today's CSV file on GitHub.
-    Includes retry logic to handle multiple machines writing at the same time.
+    Appends a row to a session-specific CSV file on GitHub.
     """
     try:
         token = secrets["GITHUB_LOG_TOKEN"]
@@ -48,16 +48,15 @@ def save_log_to_github(row_dict, secrets):
         return "Missing GitHub secrets"
 
     date_str = dt.datetime.now().strftime("%Y-%m-%d")
-    file_path = f"logs/{date_str}_nifty_log.csv"
+    # Use session ID to prevent conflicts
+    file_path = f"logs/{date_str}_session_{session_id}.csv"
     url = f"https://api.github.com/repos/{repo}/contents/{file_path}"
     headers = _get_github_headers(token)
 
     max_retries = 3
     for attempt in range(max_retries):
-        # 1. Tiny random delay to prevent machines from hitting GitHub at the exact same millisecond
-        time.sleep(random.uniform(0.1, 0.5))
+        time.sleep(random.uniform(0.1, 0.3))
 
-        # 2. Try to get the latest existing file
         r = requests.get(url, headers=headers)
         sha = None
         existing_rows = []
@@ -71,19 +70,16 @@ def save_log_to_github(row_dict, secrets):
         elif r.status_code != 404:
             return f"GitHub read error: {r.status_code}"
 
-        # 3. Append the new row
         existing_rows.append(row_dict)
 
-        # 4. Create the new CSV content
         out = io.StringIO()
         writer = csv.DictWriter(out, fieldnames=COLUMNS, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(existing_rows)
         new_content = out.getvalue()
 
-        # 5. Push back to GitHub
         payload = {
-            "message": f"Log update for {date_str} (Attempt {attempt+1})",
+            "message": f"Log update for {date_str} (Session {session_id})",
             "content": base64.b64encode(new_content.encode("utf-8")).decode("ascii"),
             "branch": "main"
         }
@@ -95,8 +91,6 @@ def save_log_to_github(row_dict, secrets):
         if r_put.status_code in (200, 201):
             return "Success"
         elif r_put.status_code == 409:
-            # Conflict! Another machine updated the file first. 
-            # We loop back, fetch the new SHA, and try again.
             continue
         else:
             return f"GitHub write error: {r_put.status_code}"
