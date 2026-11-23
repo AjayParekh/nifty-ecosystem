@@ -27,7 +27,7 @@ def fetch_logs_from_github(secrets):
             f_res = requests.get(f["download_url"], timeout=10)
             if f_res.status_code == 200:
                 temp_df = pd.read_csv(io.StringIO(f_res.text))
-                # Only keep dataframes that have the new trade logging columns
+                # Only keep valid data
                 if "trade_action" in temp_df.columns and "pnl_points" in temp_df.columns:
                     dfs.append(temp_df)
                 
@@ -36,6 +36,7 @@ def fetch_logs_from_github(secrets):
             
         df = pd.concat(dfs, ignore_index=True)
         df["timestamp"] = pd.to_datetime(df["timestamp"])
+        # Sort by time to merge all sessions perfectly
         return df.sort_values("timestamp").reset_index(drop=True)
     except Exception as e:
         print(f"Error fetching logs: {e}")
@@ -45,7 +46,6 @@ def analyze_trades(df):
     if df.empty:
         return None, None
         
-    # Ensure the required columns exist before filtering
     if "trade_action" not in df.columns:
         return None, None
 
@@ -119,7 +119,6 @@ def analyze_trades(df):
 
     trades_df = pd.DataFrame(trades_summary)
     
-    # Calculate Summary Stats
     wins = len(trades_df[trades_df["Outcome"].str.contains("WIN")])
     losses = len(trades_df[trades_df["Outcome"].str.contains("LOSS")])
     win_rate = (wins / len(trades_df)) * 100 if len(trades_df) > 0 else 0
