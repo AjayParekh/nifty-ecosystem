@@ -64,12 +64,6 @@ spot_price = spot_q.get("last_price", 0) if spot_q else 0
 spot_chg = spot_q.get("net_change", 0) if spot_q else 0
 spot_pct = (spot_chg / max(spot_price - spot_chg, 1)) * 100 if spot_q else 0
 
-# PRICE ACTION CHECK
-spot_open = spot_price - spot_chg if spot_price else 0
-price_action = "NEUTRAL"
-if spot_pct > 0.15: price_action = "BULLISH"
-elif spot_pct < -0.15: price_action = "BEARISH"
-
 vix_ltp = vix_q.get("last_price", 0) if vix_q else 0
 vix_chg = vix_q.get("net_change", 0) if vix_q else 0
 vix_pct = (vix_chg / max(vix_ltp - vix_chg, 1)) * 100 if vix_q else 0
@@ -165,6 +159,7 @@ if oi_resp and oi_resp.get("status") == "success":
         total_call_oi += item.get("call_oi", 0) or 0
         total_put_oi += item.get("put_oi", 0) or 0
         
+    # PCR SANITY CHECK (The Fix)
     if total_call_oi > 0 and total_put_oi > 0:
         pcr = total_put_oi / total_call_oi
         if pcr > 5.0: pcr = 0.0
@@ -206,7 +201,7 @@ report = tracker.report(now)
 
 vol_baseline = 10000 
 
-# --- 4. EVALUATION (CORE LOGIC) ---
+# --- 4. EVALUATION (CORE LOGIC - UNTOUCHED) ---
 expected_nifty_pct = (wti_pct * -settings.CRUDE_WEIGHT) + (inr_pct * -settings.INR_WEIGHT)
 external_gap = expected_nifty_pct - spot_pct
 
@@ -214,17 +209,6 @@ regime_res = regime_factor.evaluate_regime(vix_ltp, vix_pct, wti_ltp, wti_pct, i
 oi_res = oi_factor.calculate_oi_score(oi_resp, spot_price)
 vol_res = volume_factor.evaluate_volume_gate(fut_vol, fut_oi, prev_fut_oi, vol_baseline)
 final_decision = confluence.resolve_confluence(oi_res, vol_res, regime_res)
-
-# --- NEW: PRICE ACTION VETO ---
-# If OI says BUY but Price is falling, or OI says SELL but Price is rising
-if final_decision["action"] == "CONFIRM_BUY" and price_action == "BEARISH":
-    final_decision["action"] = "WATCH"
-    final_decision["position_cap"] = 0.0
-    final_decision["reasons"].append("⚠️ PRICE ACTION VETO: OI is Bullish, but Nifty is falling. Avoiding fakeout.")
-elif final_decision["action"] == "CONFIRM_SELL" and price_action == "BULLISH":
-    final_decision["action"] = "WATCH"
-    final_decision["position_cap"] = 0.0
-    final_decision["reasons"].append("⚠️ PRICE ACTION VETO: OI is Bearish, but Nifty is rising. Avoiding fakeout.")
 
 # --- 5. ALERT STATUS DETERMINATION ---
 alert_status = "IN_SYNC"
