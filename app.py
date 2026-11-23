@@ -493,37 +493,43 @@ st.write("Fetching logs from GitHub and analyzing performance automatically in t
 @st.cache_data(ttl=3600, show_spinner="Analyzing historical logs from GitHub...")
 def get_auto_analysis(secrets_dict):
     df = analyzer.fetch_logs_from_github(secrets_dict)
-    trades_df, summary = analyzer.analyze_trades(df)
-    return trades_df, summary
+    trades_df, summary, edges = analyzer.analyze_trades(df)
+    return trades_df, summary, edges
 
-trades_df, summary = get_auto_analysis(dict(st.secrets))
+try:
+    trades_df, summary, edges = get_auto_analysis(dict(st.secrets))
+except ValueError:
+    trades_df, summary, edges = None, None, None
 
-if summary:
+if summary and trades_df is not None:
     m1, m2, m3 = st.columns(3)
     m1.metric("Total Trades", summary["total_trades"])
     m2.metric("Win Rate", f"{summary['win_rate']:.1f}%", f"{summary['wins']}W / {summary['losses']}L")
     m3.metric("Total P&L (INR)", f"₹{summary['total_pnl']:,.2f}")
     
-    st.dataframe(trades_df.style.format({
-        "Entry Premium": "₹{:.2f}", "Max Profit (pts)": "{:.2f}", 
-        "Max Loss (pts)": "{:.2f}", "P&L (INR)": "₹{:.2f}",
-        "Entry Delta": "{:.3f}", "Entry IV": "{:.2f}", "Entry Gap": "{:.2f}%"
+    st.dataframe(trades_df[["Date", "Time", "Type", "Strike", "Entry Premium", "Outcome", "P&L (INR)", "Entry Delta", "Entry Gap"]].style.format({
+        "Entry Premium": "₹{:.2f}", "P&L (INR)": "₹{:.2f}",
+        "Entry Delta": "{:.3f}", "Entry Gap": "{:.2f}%"
     }), use_container_width=True)
-    
-    st.markdown("#### 🔍 Win vs Loss Characteristics")
-    win_df = trades_df[trades_df["Outcome"].str.contains("WIN")]
-    loss_df = trades_df[trades_df["Outcome"].str.contains("LOSS")]
-    
-    if not win_df.empty and not loss_df.empty:
-        g1, g2 = st.columns(2)
-        with g1:
-            st.write("**Winning Trades**")
-            st.write(f"Avg Delta: {win_df['Entry Delta'].mean():.3f}")
-            st.write(f"Avg IV: {win_df['Entry IV'].mean():.2f}%")
-        with g2:
-            st.write("**Losing Trades**")
-            st.write(f"Avg Delta: {loss_df['Entry Delta'].mean():.3f}")
-            st.write(f"Avg IV: {loss_df['Entry IV'].mean():.2f}%")
+
+    if edges:
+        st.markdown("#### 🎯 PREDICTIVE EDGE ANALYSIS")
+        st.write("This shows exactly where the system makes money and where it loses.")
+        
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.markdown("**By Time of Day**")
+            st.dataframe(edges["time"].style.format({"Win Rate": "{:.1f}%", "P&L (INR)": "₹{:.0f}"}), hide_index=True)
+            
+        with c2:
+            st.markdown("**By Gap Size**")
+            st.dataframe(edges["gap"].style.format({"Win Rate": "{:.1f}%", "P&L (INR)": "₹{:.0f}"}), hide_index=True)
+            
+        with c3:
+            st.markdown("**By Entry Delta**")
+            st.dataframe(edges["delta"].style.format({"Win Rate": "{:.1f}%", "P&L (INR)": "₹{:.0f}"}), hide_index=True)
+
 else:
     st.info("Waiting for more trade logs to analyze. Continue trading to generate data!")
 
