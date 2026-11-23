@@ -42,11 +42,11 @@ def fetch_logs_from_github(secrets):
 
 def analyze_trades(df):
     if df.empty or "trade_action" not in df.columns:
-        return None, None
+        return None, None, None
 
     active_df = df[df["trade_action"] == "ACTIVE"].copy()
     if active_df.empty:
-        return None, None
+        return None, None, None
 
     active_df["trade_id"] = (active_df["trade_strike"] != active_df["trade_strike"].shift()) | \
                             (active_df["trade_type"] != active_df["trade_type"].shift()) | \
